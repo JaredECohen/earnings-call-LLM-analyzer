@@ -60,6 +60,7 @@ def call_llm(llm_input: str, max_retries: int = 3) -> str:
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": llm_input}],
+                response_format={"type": "json_object"},
             )
             return response.content[0].text
 

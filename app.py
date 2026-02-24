@@ -1,5 +1,6 @@
 from flask import Flask, request, render_template_string
 import os
+import json
 from earning_api import get_transcripts
 from system_prompt import SYSTEM_PROMPT
 from llm_api import call_llm
@@ -90,14 +91,20 @@ HTML_TEMPLATE = """
             color: #4a5568;
             margin-top: 0;
         }
-        .result pre {
-            white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
-            background: white;
+        .section {
+            margin-bottom: 20px;
             padding: 15px;
+            background: #f8f9fa;
             border-radius: 5px;
-            border: 1px solid #e2e8f0;
-            overflow-x: auto;
+            border-left: 3px solid #667eea;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #4a5568;
+            font-size: 1.1em;
+        }
+        .section p, .section ul {
+            margin: 10px 0;
         }
         .loading {
             text-align: center;
@@ -122,8 +129,87 @@ HTML_TEMPLATE = """
         </form>
         {% if result %}
         <div class="result">
-            <h2>Analysis Result:</h2>
-            <pre>{{ result }}</pre>
+            <h2>📈 Performance Summary</h2>
+            <div class="section">
+                <h3>Current Quarter</h3>
+                <p>{{ result.performance_summary.current_quarter }}</p>
+                <h3>Prior Quarter</h3>
+                <p>{{ result.performance_summary.prior_quarter }}</p>
+                <h3>Key Changes</h3>
+                <p>{{ result.performance_summary.key_changes }}</p>
+            </div>
+
+            <h2>🎭 Management Tone</h2>
+            <div class="section">
+                <h3>Current Quarter Tone</h3>
+                <p>{{ result.management_tone.current_quarter_tone }}</p>
+                <h3>Prior Quarter Tone</h3>
+                <p>{{ result.management_tone.prior_quarter_tone }}</p>
+                <h3>Tone Shift</h3>
+                <p>{{ result.management_tone.tone_shift }}</p>
+            </div>
+
+            <h2>📊 Bullish/Bearish Statements</h2>
+            <div class="section">
+                <h3>Bullish Statements</h3>
+                <ul>
+                {% for stmt in result.bullish_bearish_statements.bullish_statements %}
+                    <li>{{ stmt }}</li>
+                {% endfor %}
+                </ul>
+                <h3>Bearish Statements</h3>
+                <ul>
+                {% for stmt in result.bullish_bearish_statements.bearish_statements %}
+                    <li>{{ stmt }}</li>
+                {% endfor %}
+                </ul>
+                <h3>Net Sentiment</h3>
+                <p>{{ result.bullish_bearish_statements.net_sentiment }}</p>
+            </div>
+
+            <h2>🔮 Guidance Changes</h2>
+            <div class="section">
+                <h3>Revenue Guidance</h3>
+                <p>{{ result.guidance_changes.revenue_guidance }}</p>
+                <h3>Margin Guidance</h3>
+                <p>{{ result.guidance_changes.margin_guidance }}</p>
+                <h3>Capex Guidance</h3>
+                <p>{{ result.guidance_changes.capex_guidance }}</p>
+                <h3>Other Guidance</h3>
+                <p>{{ result.guidance_changes.other_guidance }}</p>
+                <h3>Guidance Summary</h3>
+                <p>{{ result.guidance_changes.guidance_summary }}</p>
+            </div>
+
+            <h2>⚠️ Risk Analysis</h2>
+            <div class="section">
+                <h3>Identified Risks</h3>
+                <ul>
+                {% for risk in result.risk_analysis.identified_risks %}
+                    <li>{{ risk }}</li>
+                {% endfor %}
+                </ul>
+                <h3>New Risks</h3>
+                <ul>
+                {% for risk in result.risk_analysis.new_risks %}
+                    <li>{{ risk }}</li>
+                {% endfor %}
+                </ul>
+                <h3>Recurring Risks</h3>
+                <ul>
+                {% for risk in result.risk_analysis.recurring_risks %}
+                    <li>{{ risk }}</li>
+                {% endfor %}
+                </ul>
+                <h3>Resolved Risks</h3>
+                <ul>
+                {% for risk in result.risk_analysis.resolved_risks %}
+                    <li>{{ risk }}</li>
+                {% endfor %}
+                </ul>
+                <h3>Risk Assessment</h3>
+                <p>{{ result.risk_analysis.risk_assessment }}</p>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -152,7 +238,8 @@ def index():
                         f"{transcript_old.get('transcript_text', '')}"
                     )
                     # Call LLM
-                    result = call_llm(llm_input)
+                    llm_output = call_llm(llm_input)
+                    result = json.loads(llm_output)
             except Exception as e:
                 result = f"Error: {str(e)}"
     return render_template_string(HTML_TEMPLATE, result=result)
