@@ -83,14 +83,14 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
-def get_transcripts(symbol: str) -> tuple[dict, dict]:
+def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
     _load_dotenv(Path(__file__).with_name(".env"))
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("Missing ALPHAVANTAGE_API_KEY environment variable.")
 
-    quarter_override = os.getenv("ALPHAVANTAGE_QUARTER", "").strip() or None
+    quarter_override = quarter or os.getenv("ALPHAVANTAGE_QUARTER", "").strip() or None
     lookback = int(os.getenv("ALPHAVANTAGE_LOOKBACK", "20"))
 
     base_url = "https://www.alphavantage.co/query"
