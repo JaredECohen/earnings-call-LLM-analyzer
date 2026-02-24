@@ -1,70 +1,80 @@
-# Getting Started with Create React App
+# Stock Earnings Calls Analyzer
+AI-Powered Earnings Call Intelligence Platform
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Overview
+This web application transforms raw quarterly earnings call transcripts into actionable investment intelligence using advanced natural language processing and the Alpha Vantage financial data API.
 
-## Available Scripts
+## Features
+- **Automated Transcript Retrieval**: Fetch quarterly earnings call transcripts for any publicly traded company
+- **Comprehensive Analysis**: Structured analysis covering 5 key areas:
+  - Performance Summary (financial metrics, QoQ comparison)
+  - Management Tone Assessment (confidence levels, tone shifts)
+  - Sentiment Extraction (bullish/bearish statements)
+  - Guidance Tracking (forward-looking changes)
+  - Risk Identification (new, recurring, resolved risks)
+- **Quarter Selection**: Analyze specific quarters or latest available
+- **Professional Dashboard**: Clean, responsive React frontend with structured results display
 
-In the project directory, you can run:
+## Architecture
+- **Frontend**: React.js dashboard for user interaction and results visualization
+- **Backend**: Python Flask API server handling analysis requests
+- **AI Engine**: Anthropic Claude for advanced NLP analysis
+- **Data Processing**: Automated transcript retrieval and structured output parsing
 
-### `npm start`
+## Setup
+1. Clone the repository
+2. Install Python dependencies: `pip install -r requirements.txt`
+3. Install Node.js dependencies: `cd frontend && npm install`
+4. Create a `.env` file with your API keys:
+   ```
+   ALPHAVANTAGE_API_KEY=your_alphavantage_key
+   ANTHROPIC_API_KEY=your_anthropic_key
+   ```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Usage
+### Full Application
+1. Start the backend API: `python app.py`
+2. In a new terminal, start the frontend: `cd frontend && npm start`
+3. Open http://localhost:3000/ in your browser
+4. Enter a company symbol (e.g., AAPL, MSFT) and optional quarter
+5. Click "Analyze" to get comprehensive insights
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### API Only
+Run `python app.py` and make POST requests to `http://localhost:5000/api/analyze` with JSON:
+```json
+{
+  "symbol": "AAPL",
+  "quarter": "2024Q1"
+}
+```
 
-### `npm test`
+### Command Line
+Run `python main.py` for basic analysis (uses environment variable or defaults to MSFT)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Analysis Output
+The system provides structured analysis in five categories with quarter-over-quarter comparisons:
+- **Performance Summary**: Key financial metrics and operational highlights
+- **Management Tone**: Tone classification and shifts between quarters
+- **Bullish/Bearish Statements**: Extracted statements with sentiment analysis
+- **Guidance Changes**: Updates to forward-looking guidance
+- **Risk Analysis**: Comprehensive risk catalog with change tracking
 
-### `npm run build`
+## API Requirements
+- Alpha Vantage API key (free tier available)
+- Anthropic API access for LLM analysis
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Project Status
+This implementation fulfills the core requirements of the project proposal:
+- ✅ Automated transcript retrieval via Alpha Vantage API
+- ✅ AI-powered analysis with structured JSON output
+- ✅ Quarter-over-quarter comparison logic
+- ✅ Professional React dashboard UI
+- ✅ Comprehensive 5-category analysis framework
+- ✅ CORS-enabled API for frontend integration
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## Future Enhancements
+- Database caching for improved performance
+- Multi-company portfolio analysis
+- Advanced visualizations and trend tracking
+- User authentication and analysis history
+- Cloud deployment configuration
