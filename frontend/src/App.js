@@ -15,7 +15,7 @@ function App() {
     setResult(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/analyze', {
+      const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -31,7 +31,8 @@ function App() {
 
       setResult(data);
     } catch (err) {
-      setError(err.message);
+      console.error('Fetch error:', err);
+      setError(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
