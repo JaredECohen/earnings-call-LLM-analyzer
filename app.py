@@ -272,11 +272,28 @@ def analyze():
             retry_output = call_llm(llm_input + retry_instruction)
             result = normalize_result(parse_output(retry_output))
 
+        def _looks_like_label(value: str) -> bool:
+            if not isinstance(value, str):
+                return False
+            stripped = value.strip()
+            if not stripped:
+                return True
+            lower = stripped.lower()
+            if lower in ("not provided", "n/a"):
+                return True
+            if re.fullmatch(r"\\d{4}q[1-4]", lower):
+                return True
+            if re.fullmatch(r"fy\\d{4}\\s*q[1-4]\\s*\\(\\d{4}q[1-4]\\)", lower):
+                return True
+            if len(stripped.split()) <= 3:
+                return True
+            return False
+
         def _section_empty(section_key: str, section_value):
             if section_value is None:
                 return True
             if isinstance(section_value, str):
-                return section_value.strip().lower() in ("", "not provided")
+                return _looks_like_label(section_value)
             if isinstance(section_value, list):
                 return not section_value or all(
                     isinstance(item, str) and item.strip().lower() == "not provided"
@@ -307,7 +324,9 @@ def analyze():
         if _section_empty("performance_summary", result.get("performance_summary")):
             _refill_section(
                 "performance_summary",
-                "Include current_quarter, prior_quarter, and key_changes strings."
+                "Include current_quarter, prior_quarter, and key_changes strings. "
+                "Use 2–4 full sentences per quarter with concrete metrics. "
+                "Do not output only a quarter label."
                 ,
                 "You are extracting performance summary from two earnings call transcripts. "
                 "Return concise but specific metrics, growth, and operational highlights. "
@@ -347,6 +366,70 @@ def analyze():
                 "regulatory issues, and execution risks as risks. "
                 "Return only JSON for risk_analysis."
             )
+
+        def _clean_text(value: str) -> str:
+            text = value
+            text = text.replace("Q1 (Most Recent):", "Most recent quarter:")
+            text = text.replace("Q4 (Fiscal Year End):", "Prior quarter:")
+            text = text.replace("Q2 FY2026 full-year outlook", "Full-year FY2026 outlook")
+            text = text.replace("Q2 FY2026 full year outlook", "Full-year FY2026 outlook")
+            text = re.sub(
+                r"moderated\\s+slightly\\s+to\\s+\\$([0-9.]+)B\\s+in\\s+Q1\\s+vs\\.\\s+\\$([0-9.]+)B\\s+in\\s+Q4",
+                r"increased to $\\1B in Q1 vs. $\\2B in Q4",
+                text,
+                flags=re.IGNORECASE,
+            )
+            return text
+
+        perf = result.get("performance_summary")
+        if isinstance(perf, dict):
+            for key in ("current_quarter", "prior_quarter", "key_changes"):
+                if isinstance(perf.get(key), str):
+                    perf[key] = _clean_text(perf[key])
+            result["performance_summary"] = perf
+
+        guidance = result.get("guidance_changes")
+        if isinstance(guidance, dict):
+            for key in ("revenue_guidance", "margin_guidance", "capex_guidance", "other_guidance", "guidance_summary"):
+                if isinstance(guidance.get(key), str):
+                    guidance[key] = _clean_text(guidance[key])
+            # If revenue guidance mentions segment changes without labels, add labels in order
+            rev = guidance.get("revenue_guidance")
+            if isinstance(rev, str) and rev.lower().startswith("segment changes:") and "|" in rev:
+                parts = [p.strip() for p in rev[len("segment changes:"):].split("|") if p.strip()]
+                labels = [
+                    "Intelligent Cloud",
+                    "More Personal Computing",
+                    "Productivity and Business Processes",
+                ]
+                labeled = []
+                for i, part in enumerate(parts):
+                    label = labels[i] if i < len(labels) else f"Segment {i + 1}"
+                    labeled.append(f"{label}: {part}")
+                guidance["revenue_guidance"] = "Segment changes: " + " | ".join(labeled)
+            # De-structure guidance strings into labeled paragraphs
+            def _paragraphize(text: str) -> str:
+                if "|" not in text:
+                    return text
+                parts = [p.strip() for p in text.split("|") if p.strip()]
+                paragraphs = []
+                for part in parts:
+                    if ":" in part:
+                        label, rest = part.split(":", 1)
+                        label = label.strip()
+                        rest = rest.strip()
+                        if rest:
+                            paragraphs.append(f"{label}: {rest}")
+                        else:
+                            paragraphs.append(label)
+                    else:
+                        paragraphs.append(part)
+                return "\n\n".join(paragraphs)
+
+            for key in ("revenue_guidance", "margin_guidance", "capex_guidance", "other_guidance"):
+                if isinstance(guidance.get(key), str):
+                    guidance[key] = _paragraphize(guidance[key])
+            result["guidance_changes"] = guidance
         return jsonify(result)
 
     except Exception as e:

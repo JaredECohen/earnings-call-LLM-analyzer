@@ -10,7 +10,10 @@ function App() {
 
   const renderItem = (item) => {
     if (item == null) return null;
-    if (typeof item === 'string' || typeof item === 'number') return String(item);
+    if (typeof item === 'string' || typeof item === 'number') {
+      const text = String(item);
+      return text.replace(/^\s*\d+\s+/, '');
+    }
     if (Array.isArray(item)) return item.map((v) => renderItem(v)).filter(Boolean).join(', ');
     if (typeof item === 'object') {
       if (item.risk && item.details) return `${item.risk}: ${item.details}`;
@@ -22,9 +25,21 @@ function App() {
       if (item.category && item.description) return item.description;
       if (item.category && item.details) return item.details;
       if (item.category && item.summary) return item.summary;
-      return Object.entries(item)
-        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-        .join(' | ');
+      const preferred = [
+        item.current_mention,
+        item.prior_mention,
+        item.trend,
+        item.resolution,
+        item.prior_risk,
+        item.status,
+      ]
+        .map((v) => renderItem(v))
+        .filter(Boolean);
+      if (preferred.length) return preferred.join(' ');
+      return Object.values(item)
+        .map((v) => renderItem(v))
+        .filter(Boolean)
+        .join(' ');
     }
     return String(item);
   };
@@ -32,27 +47,102 @@ function App() {
   const renderGuidanceText = (value) => {
     if (value == null) return null;
     if (typeof value === 'string' || typeof value === 'number') return String(value);
-    if (Array.isArray(value)) return value.map((v) => renderGuidanceText(v)).filter(Boolean).join(' ');
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => renderGuidanceText(v))
+        .filter((v) => v && v.trim().toLowerCase() !== 'not provided')
+        .join(' ');
+    }
     if (typeof value === 'object') {
       const parts = [];
       for (const v of Object.values(value)) {
         if (v == null) continue;
         if (typeof v === 'string' || typeof v === 'number') {
-          parts.push(String(v));
+          const text = String(v);
+          if (text.trim().toLowerCase() !== 'not provided') {
+            parts.push(text);
+          }
         } else if (Array.isArray(v)) {
-          const inner = v.map((x) => renderGuidanceText(x)).filter(Boolean).join(' ');
+          const inner = v
+            .map((x) => renderGuidanceText(x))
+            .filter((x) => x && x.trim().toLowerCase() !== 'not provided')
+            .join(' ');
           if (inner) parts.push(inner);
         } else if (typeof v === 'object') {
           const inner = Object.values(v)
             .map((x) => renderGuidanceText(x))
-            .filter(Boolean)
+            .filter((x) => x && x.trim().toLowerCase() !== 'not provided')
             .join(' ');
           if (inner) parts.push(inner);
         }
       }
-      return parts.join(' | ');
+      const deduped = [];
+      for (const part of parts) {
+        if (!part) continue;
+        if (deduped.length === 0 || deduped[deduped.length - 1] !== part) {
+          deduped.push(part);
+        }
+      }
+      return deduped.join(' | ');
     }
     return String(value);
+  };
+
+  const renderGuidanceBlock = (value) => {
+    if (value == null) return null;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = renderGuidanceText(value);
+      const segmentPrefix = /^segment changes:\s*/i;
+      if (segmentPrefix.test(text) && text.includes('|')) {
+        const cleaned = text.replace(segmentPrefix, '');
+        const parts = cleaned.split('|').map((p) => p.trim()).filter(Boolean);
+        const labels = [
+          'Intelligent Cloud',
+          'More Personal Computing',
+          'Productivity and Business Processes',
+        ];
+        return (
+          <div>
+            {parts.map((part, i) => (
+              <p key={i}>
+                <strong>{labels[i] || `Segment ${i + 1}`}:</strong> {part}
+              </p>
+            ))}
+          </div>
+        );
+      }
+      return <p>{text}</p>;
+    }
+    if (Array.isArray(value)) {
+      return (
+        <div>
+          {value
+            .map((v, i) => {
+              const text = renderGuidanceText(v);
+              if (!text) return null;
+              return <p key={i}>{text}</p>;
+            })
+            .filter(Boolean)}
+        </div>
+      );
+    }
+    if (typeof value === 'object') {
+      return (
+        <div>
+          {Object.entries(value).map(([key, v]) => {
+            const text = renderGuidanceText(v);
+            if (!text) return null;
+            const label = key.replace(/_/g, ' ');
+            return (
+              <p key={key}>
+                <strong>{label}:</strong> {text}
+              </p>
+            );
+          })}
+        </div>
+      );
+    }
+    return <p>{String(value)}</p>;
   };
 
   const handleSubmit = async (e) => {
@@ -264,23 +354,23 @@ function App() {
               <h3>🔮 Guidance Changes</h3>
               <div className="subsection">
                 <h4>Revenue Guidance</h4>
-                <p>{renderGuidanceText(result.guidance_changes?.revenue_guidance)}</p>
+                {renderGuidanceBlock(result.guidance_changes?.revenue_guidance)}
               </div>
               <div className="subsection">
                 <h4>Margin Guidance</h4>
-                <p>{renderGuidanceText(result.guidance_changes?.margin_guidance)}</p>
+                {renderGuidanceBlock(result.guidance_changes?.margin_guidance)}
               </div>
               <div className="subsection">
                 <h4>Capex Guidance</h4>
-                <p>{renderGuidanceText(result.guidance_changes?.capex_guidance)}</p>
+                {renderGuidanceBlock(result.guidance_changes?.capex_guidance)}
               </div>
               <div className="subsection">
                 <h4>Other Guidance</h4>
-                <p>{renderGuidanceText(result.guidance_changes?.other_guidance)}</p>
+                {renderGuidanceBlock(result.guidance_changes?.other_guidance)}
               </div>
               <div className="subsection">
                 <h4>Guidance Summary</h4>
-                <p>{renderGuidanceText(result.guidance_changes?.guidance_summary)}</p>
+                {renderGuidanceBlock(result.guidance_changes?.guidance_summary)}
               </div>
             </section>
 

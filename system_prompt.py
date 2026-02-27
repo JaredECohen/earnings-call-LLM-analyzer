@@ -4,8 +4,8 @@ Please analyze the transcripts and provide insights in the following structured 
 
 {
   "performance_summary": {
-    "current_quarter": "Include specific numbers (revenue, EPS, margins, growth rates) and key operational highlights from the current quarter transcript.",
-    "prior_quarter": "Include specific numbers and highlights from the prior quarter transcript for comparison.",
+    "current_quarter": "Include specific numbers (revenue, EPS, margins, growth rates) and key operational highlights from the current quarter transcript. Write 2–4 sentences. Do not output just a quarter label. Do not leave this blank; if missing, say 'Not provided' and briefly explain why.",
+    "prior_quarter": "Include specific numbers and highlights from the prior quarter transcript for comparison. Write 2–4 sentences. Do not output just a quarter label. Do not leave this blank; if missing, say 'Not provided' and briefly explain why.",
     "key_changes": "Highlight material changes in metrics (growth, margins, cash flow, segment performance) and their drivers."
   },
   "management_tone": {
@@ -27,10 +27,10 @@ Please analyze the transcripts and provide insights in the following structured 
     "sentiment_change": "Describe how sentiment shifted from prior to current quarter and why"
   },
   "guidance_changes": {
-    "revenue_guidance": "Summarize any revenue guidance with concrete ranges, changes, or notes. If none, say 'Not provided'.",
-    "margin_guidance": "Summarize margin/profitability guidance or changes. If none, say 'Not provided'.",
-    "capex_guidance": "Summarize capex guidance or changes. If none, say 'Not provided'.",
-    "other_guidance": "Summarize other forward-looking guidance (hiring, product timing, FX assumptions). If none, say 'Not provided'.",
+    "revenue_guidance": "Write 1–3 short paragraphs (2–4 sentences each) in plain prose. Do not use key-value blocks, bullet lists, or pipe separators. Avoid repeating the same current vs prior guidance within a single sentence. If you mention multiple segments, explicitly label them (e.g., 'Intelligent Cloud: ...', 'Productivity and Business Processes: ...', 'More Personal Computing: ...', 'Total company: ...'). Summarize revenue guidance with concrete ranges and any changes. If none, say 'Not provided'.",
+    "margin_guidance": "Write 1–3 short paragraphs (2–4 sentences each) in plain prose. Do not use key-value blocks, bullet lists, or pipe separators. Avoid repeating the same current vs prior guidance within a single sentence. Summarize margin/profitability guidance with concrete ranges and any changes. If none, say 'Not provided'.",
+    "capex_guidance": "Write 1–3 short paragraphs (2–4 sentences each) in plain prose. Do not use key-value blocks, bullet lists, or pipe separators. Avoid repeating the same current vs prior guidance within a single sentence. Summarize capex guidance and mix (short-lived vs long-lived assets). If none, say 'Not provided'.",
+    "other_guidance": "Write 1–3 short paragraphs (2–4 sentences each) in plain prose. Do not use key-value blocks, bullet lists, or pipe separators. Avoid repeating the same current vs prior guidance within a single sentence. Summarize other guidance (tax, FX, hiring, other income/expense). If none, say 'Not provided'.",
     "guidance_summary": "Overall assessment of guidance changes and implications."
   },
   "risk_analysis": {
