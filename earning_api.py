@@ -1,10 +1,13 @@
 import datetime
 import json
 import os
+import sqlite3
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 
 def _quarter_sequence(start_date: datetime.date, count: int) -> list[str]:
@@ -28,6 +31,14 @@ def _fetch_json(url: str, params: dict[str, str]) -> dict:
 
 def _is_error_response(data: dict) -> bool:
     return any(key in data for key in ("Error Message", "Information", "Note"))
+
+
+def _rate_limit_message(data: dict) -> Optional[str]:
+    for key in ("Information", "Note"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _extract_transcript(data: dict) -> str:
@@ -83,12 +94,76 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key, value)
 
 
+def _db_path() -> Path:
+    data_dir = Path(__file__).with_name("data")
+    data_dir.mkdir(exist_ok=True)
+    return data_dir / "transcripts.db"
+
+
+def _init_db() -> None:
+    db_file = _db_path()
+    with sqlite3.connect(db_file) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transcripts (
+                symbol TEXT NOT NULL,
+                quarter TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                transcript_text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (symbol, quarter)
+            )
+            """
+        )
+
+
+def _get_cached_transcript(symbol: str, quarter: str) -> Optional[dict]:
+    db_file = _db_path()
+    with sqlite3.connect(db_file) as conn:
+        row = conn.execute(
+            """
+            SELECT data_json, transcript_text
+            FROM transcripts
+            WHERE symbol = ? AND quarter = ?
+            """,
+            (symbol, quarter),
+        ).fetchone()
+    if not row:
+        return None
+    data_json, transcript_text = row
+    data = json.loads(data_json)
+    data.setdefault("transcript_text", transcript_text)
+    return data
+
+
+def _save_transcript(symbol: str, quarter: str, data: dict) -> None:
+    transcript_text = data.get("transcript_text", "").strip()
+    if not transcript_text:
+        return
+    db_file = _db_path()
+    with sqlite3.connect(db_file) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO transcripts
+            (symbol, quarter, data_json, transcript_text, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                symbol,
+                quarter,
+                json.dumps(data, ensure_ascii=True),
+                transcript_text,
+                datetime.datetime.utcnow().isoformat(),
+            ),
+        )
+
+
 def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
     _load_dotenv(Path(__file__).with_name(".env"))
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
-    api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("Missing ALPHAVANTAGE_API_KEY environment variable.")
+    _init_db()
 
     quarter_override = quarter or os.getenv("ALPHAVANTAGE_QUARTER", "").strip() or None
     lookback = int(os.getenv("ALPHAVANTAGE_LOOKBACK", "20"))
@@ -102,6 +177,14 @@ def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
 
     found: list[tuple[str, dict]] = []
     for quarter in quarters:
+        cached = _get_cached_transcript(symbol, quarter)
+        if cached:
+            _debug(f"Cache hit for {symbol} {quarter}.")
+            found.append((quarter, cached))
+            if len(found) >= 2:
+                break
+            continue
+
         _debug(f"Requesting transcript for {symbol} {quarter}...")
         data = _fetch_json(
             base_url,
@@ -114,14 +197,19 @@ def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
         )
         if _is_error_response(data):
             _debug(f"Alpha Vantage response for {quarter}: {data}")
+            rate_message = _rate_limit_message(data)
+            if rate_message:
+                raise RuntimeError(f"Alpha Vantage rate limit: {rate_message}")
             continue
         transcript = _extract_transcript(data)
         if transcript:
             data_with_text = dict(data)
             data_with_text.setdefault("transcript_text", transcript)
+            _save_transcript(symbol, quarter, data_with_text)
             found.append((quarter, data_with_text))
             if len(found) >= 2:
                 break
+        time.sleep(1.0)
 
     if found:
         newest_quarter, transcript_new = found[0]

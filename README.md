@@ -31,6 +31,12 @@ Run `python app.py` and open http://127.0.0.1:5000/ in your browser.
 - Optionally specify a quarter (e.g., 2024Q1)
 - Click "Analyze" to get comprehensive insights
 
+### Production-Style Single Server
+You can serve the React UI directly from Flask (no separate dev server):
+1. Build the frontend: `cd frontend && npm run build`
+2. Start the backend: `python app.py`
+3. Open http://127.0.0.1:5000/
+
 ### Command Line
 Run `python main.py` for basic analysis (uses environment variable or defaults to MSFT)
 

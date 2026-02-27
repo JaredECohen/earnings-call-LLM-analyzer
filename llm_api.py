@@ -42,7 +42,7 @@ def _get_client():
 
 
 # ── Main function to call from main.py ───────────────────────────────────────
-def call_llm(llm_input: str, max_retries: int = 3) -> str:
+def call_llm(llm_input: str, max_retries: int = 3, system_override: str | None = None) -> str:
     """
     Send the combined prompt + transcripts to Claude and return the analysis.
 
@@ -53,12 +53,22 @@ def call_llm(llm_input: str, max_retries: int = 3) -> str:
     Returns:
         The LLM's analysis as a plain string.
     """
+    json_only_instructions = (
+        "Return ONLY a single JSON object with no surrounding text, markdown, or code fences. "
+        "Use exactly these top-level keys and no others: "
+        "performance_summary, management_tone, bullish_bearish_statements, guidance_changes, risk_analysis. "
+        "Do NOT rename keys or add alternate top-level keys. "
+        "If any data is missing, still include the key and use the string 'Not provided'. "
+        "You must extract risks from the transcripts; only use 'Not provided' if the transcript truly contains no risk-related content."
+    )
+    system_message = system_override or f"{SYSTEM_PROMPT}\n\n{json_only_instructions}"
+
     for attempt in range(1, max_retries + 1):
         try:
             response = _get_client().messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=system_message,
                 messages=[{"role": "user", "content": llm_input}],
             )
             return response.content[0].text
