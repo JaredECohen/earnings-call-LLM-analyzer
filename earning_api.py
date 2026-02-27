@@ -158,6 +158,15 @@ def _save_transcript(symbol: str, quarter: str, data: dict) -> None:
         )
 
 
+def _previous_quarter(quarter: str) -> str:
+    q = quarter.upper().strip()
+    year = int(q[:4])
+    q_num = int(q[-1])
+    if q_num == 1:
+        return f"{year - 1}Q4"
+    return f"{year}Q{q_num - 1}"
+
+
 def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
     _load_dotenv(Path(__file__).with_name(".env"))
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
@@ -169,11 +178,10 @@ def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
     lookback = int(os.getenv("ALPHAVANTAGE_LOOKBACK", "20"))
 
     base_url = "https://www.alphavantage.co/query"
-    quarters = (
-        [quarter_override]
-        if quarter_override
-        else _quarter_sequence(datetime.date.today(), lookback)
-    )
+    if quarter_override:
+        quarters = [quarter_override, _previous_quarter(quarter_override)]
+    else:
+        quarters = _quarter_sequence(datetime.date.today(), lookback)
 
     found: list[tuple[str, dict]] = []
     for quarter in quarters:

@@ -44,6 +44,8 @@ function App() {
     return String(item);
   };
 
+  const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
+
   const renderGuidanceText = (value) => {
     if (value == null) return null;
     if (typeof value === 'string' || typeof value === 'number') return String(value);
@@ -273,7 +275,7 @@ function App() {
                   <div className="subsection">
                     <h4>Current Quarter Bullish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements.current_quarter.bullish_statements?.map(
+                      {asArray(result.bullish_bearish_statements.current_quarter.bullish_statements).map(
                         (stmt, i) => (
                           <li key={i}>{renderItem(stmt)}</li>
                         )
@@ -283,7 +285,7 @@ function App() {
                   <div className="subsection">
                     <h4>Current Quarter Bearish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements.current_quarter.bearish_statements?.map(
+                      {asArray(result.bullish_bearish_statements.current_quarter.bearish_statements).map(
                         (stmt, i) => (
                           <li key={i}>{renderItem(stmt)}</li>
                         )
@@ -298,7 +300,7 @@ function App() {
                   <div className="subsection">
                     <h4>Prior Quarter Bullish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements.prior_quarter?.bullish_statements?.map(
+                      {asArray(result.bullish_bearish_statements.prior_quarter?.bullish_statements).map(
                         (stmt, i) => (
                           <li key={i}>{renderItem(stmt)}</li>
                         )
@@ -308,7 +310,7 @@ function App() {
                   <div className="subsection">
                     <h4>Prior Quarter Bearish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements.prior_quarter?.bearish_statements?.map(
+                      {asArray(result.bullish_bearish_statements.prior_quarter?.bearish_statements).map(
                         (stmt, i) => (
                           <li key={i}>{renderItem(stmt)}</li>
                         )
@@ -329,7 +331,7 @@ function App() {
                   <div className="subsection">
                     <h4>Bullish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements?.bullish_statements?.map((stmt, i) => (
+                      {asArray(result.bullish_bearish_statements?.bullish_statements).map((stmt, i) => (
                         <li key={i}>{renderItem(stmt)}</li>
                       ))}
                     </ul>
@@ -337,7 +339,7 @@ function App() {
                   <div className="subsection">
                     <h4>Bearish Statements</h4>
                     <ul>
-                      {result.bullish_bearish_statements?.bearish_statements?.map((stmt, i) => (
+                      {asArray(result.bullish_bearish_statements?.bearish_statements).map((stmt, i) => (
                         <li key={i}>{renderItem(stmt)}</li>
                       ))}
                     </ul>

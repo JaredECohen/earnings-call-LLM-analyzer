@@ -52,12 +52,7 @@ def analyze():
 
     try:
         # Get transcripts
-        if quarter:
-            raise ValueError(
-                "Quarter filtering is not supported in the current API client. "
-                "Please leave the quarter field blank."
-            )
-        transcript_new, transcript_old = get_transcripts(symbol)
+        transcript_new, transcript_old = get_transcripts(symbol, quarter)
         if not transcript_new:
             return jsonify({'error': f'No transcripts found for {symbol}{f" {quarter}" if quarter else ""}'}), 404
 
