@@ -1,4 +1,5 @@
 import datetime
+import logging
 import json
 import os
 import sqlite3
@@ -8,6 +9,36 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
+
+
+_NON_LOCAL_ENV_VARS = (
+    "RENDER",
+    "RENDER_EXTERNAL_HOSTNAME",
+    "FLY_APP_NAME",
+    "RAILWAY_ENVIRONMENT",
+    "VERCEL",
+    "AWS_REGION",
+    "DYNO",
+    "K_SERVICE",
+    "GOOGLE_CLOUD_PROJECT",
+    "WEBSITE_INSTANCE_ID",
+)
+
+
+def _cache_enabled() -> bool:
+    override = os.getenv("ENABLE_LOCAL_CACHE")
+    if override == "1":
+        return True
+    if override == "0":
+        return False
+    return not any(os.getenv(key) for key in _NON_LOCAL_ENV_VARS)
+
+
+def cache_enabled() -> bool:
+    return _cache_enabled()
+
+
+logger = logging.getLogger(__name__)
 
 
 def _quarter_sequence(start_date: datetime.date, count: int) -> list[str]:
@@ -96,11 +127,14 @@ def _load_dotenv(path: Path) -> None:
 
 def _db_path() -> Path:
     data_dir = Path(__file__).with_name("data")
-    data_dir.mkdir(exist_ok=True)
+    if _cache_enabled():
+        data_dir.mkdir(exist_ok=True)
     return data_dir / "transcripts.db"
 
 
 def _init_db() -> None:
+    if not _cache_enabled():
+        return
     db_file = _db_path()
     with sqlite3.connect(db_file) as conn:
         conn.execute(
@@ -118,6 +152,8 @@ def _init_db() -> None:
 
 
 def _get_cached_transcript(symbol: str, quarter: str) -> Optional[dict]:
+    if not _cache_enabled():
+        return None
     db_file = _db_path()
     with sqlite3.connect(db_file) as conn:
         row = conn.execute(
@@ -137,6 +173,8 @@ def _get_cached_transcript(symbol: str, quarter: str) -> Optional[dict]:
 
 
 def _save_transcript(symbol: str, quarter: str, data: dict) -> None:
+    if not _cache_enabled():
+        return
     transcript_text = data.get("transcript_text", "").strip()
     if not transcript_text:
         return
@@ -156,6 +194,12 @@ def _save_transcript(symbol: str, quarter: str, data: dict) -> None:
                 datetime.datetime.utcnow().isoformat(),
             ),
         )
+    logger.info(
+        "Transcript cache saved: %s %s (chars=%s)",
+        symbol,
+        quarter,
+        len(transcript_text),
+    )
 
 
 def _previous_quarter(quarter: str) -> str:
@@ -172,9 +216,12 @@ def get_transcripts(symbol: str, quarter: str = None) -> tuple[dict, dict]:
     api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("Missing ALPHAVANTAGE_API_KEY environment variable.")
+    symbol = symbol.upper().strip()
     _init_db()
 
     quarter_override = quarter or os.getenv("ALPHAVANTAGE_QUARTER", "").strip() or None
+    if quarter_override:
+        quarter_override = quarter_override.upper().strip()
     lookback = int(os.getenv("ALPHAVANTAGE_LOOKBACK", "20"))
 
     base_url = "https://www.alphavantage.co/query"

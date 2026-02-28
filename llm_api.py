@@ -65,12 +65,20 @@ def call_llm(llm_input: str, max_retries: int = 3, system_override: str | None =
 
     for attempt in range(1, max_retries + 1):
         try:
+            model_name = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
             response = _get_client().messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=model_name,
                 max_tokens=4096,
                 system=system_message,
                 messages=[{"role": "user", "content": llm_input}],
             )
+            usage = getattr(response, "usage", None)
+            if usage:
+                input_tokens = getattr(usage, "input_tokens", None)
+                output_tokens = getattr(usage, "output_tokens", None)
+                print(
+                    f"LLM usage: input_tokens={input_tokens} output_tokens={output_tokens}"
+                )
             return response.content[0].text
 
         except anthropic.RateLimitError:
