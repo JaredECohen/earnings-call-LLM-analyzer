@@ -7,23 +7,126 @@ from flask_cors import CORS
 import os
 import json
 import re
-from earning_api import get_transcripts
+import sqlite3
+import hashlib
+import datetime
+from earning_api import get_transcripts, cache_enabled as transcript_cache_enabled
 from system_prompt import SYSTEM_PROMPT
 from llm_api import call_llm
 
 frontend_build = Path(__file__).with_name("frontend") / "build"
 app = Flask(
     __name__,
-    static_folder=str(frontend_build),
+    static_folder=str(frontend_build / "static"),
     static_url_path="/static",
 )
 CORS(app)  # Enable CORS for React frontend
+
+CACHE_VERSION = "v2"
+
+_NON_LOCAL_ENV_VARS = (
+    "RENDER",
+    "RENDER_EXTERNAL_HOSTNAME",
+    "FLY_APP_NAME",
+    "RAILWAY_ENVIRONMENT",
+    "VERCEL",
+    "AWS_REGION",
+    "DYNO",
+    "K_SERVICE",
+    "GOOGLE_CLOUD_PROJECT",
+    "WEBSITE_INSTANCE_ID",
+)
+
+
+def _cache_enabled() -> bool:
+    override = os.getenv("ENABLE_LOCAL_CACHE")
+    if override == "1":
+        return True
+    if override == "0":
+        return False
+    return not any(os.getenv(key) for key in _NON_LOCAL_ENV_VARS)
+
+
+def _cache_db_path() -> Path:
+    data_dir = Path(__file__).with_name("data")
+    data_dir.mkdir(exist_ok=True)
+    return data_dir / "llm_cache.db"
+
+
+def _init_llm_cache() -> None:
+    with sqlite3.connect(_cache_db_path()) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS llm_cache (
+                cache_key TEXT PRIMARY KEY,
+                response_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                symbol TEXT,
+                quarter TEXT
+            )
+            """
+        )
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(llm_cache)").fetchall()
+        }
+        if "symbol" not in columns:
+            conn.execute("ALTER TABLE llm_cache ADD COLUMN symbol TEXT")
+        if "quarter" not in columns:
+            conn.execute("ALTER TABLE llm_cache ADD COLUMN quarter TEXT")
+
+
+def _make_cache_key(symbol: str, quarter: str) -> str:
+    h = hashlib.sha256()
+    h.update(CACHE_VERSION.encode("utf-8"))
+    h.update(SYSTEM_PROMPT.encode("utf-8"))
+    h.update(symbol.encode("utf-8"))
+    h.update(quarter.encode("utf-8"))
+    return h.hexdigest()
+
+
+def _get_cached_llm_response(cache_key: str) -> dict | None:
+    with sqlite3.connect(_cache_db_path()) as conn:
+        row = conn.execute(
+            "SELECT response_json FROM llm_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+    if not row:
+        return None
+    return json.loads(row[0])
+
+
+def _set_cached_llm_response(
+    cache_key: str, response: dict, symbol: str, quarter: str
+) -> None:
+    with sqlite3.connect(_cache_db_path()) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO llm_cache
+            (cache_key, response_json, created_at, symbol, quarter)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                cache_key,
+                json.dumps(response, ensure_ascii=True),
+                datetime.datetime.utcnow().isoformat(),
+                symbol,
+                quarter,
+            ),
+        )
+    app.logger.info(
+        "LLM cache saved: key=%s symbol=%s quarter=%s",
+        cache_key[:12],
+        symbol,
+        quarter,
+    )
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 app.logger.setLevel(logging.INFO)
+app.logger.info("LLM cache enabled: %s", _cache_enabled())
+app.logger.info("Transcript cache enabled: %s", transcript_cache_enabled())
 
 
 @app.before_request
@@ -45,7 +148,7 @@ def handle_unexpected_error(err):
 def analyze():
     data = request.get_json()
     symbol = data.get('symbol', '').upper().strip()
-    quarter = data.get('quarter', '').strip() or None
+    quarter = data.get('quarter', '').strip().upper() or None
 
     if not symbol:
         return jsonify({'error': 'Symbol is required'}), 400
@@ -64,7 +167,22 @@ def analyze():
             f"{transcript_old.get('transcript_text', '')}"
         )
 
+        quarter_key = (quarter or transcript_new.get("quarter") or "latest").strip().upper()
+        cache_key = _make_cache_key(symbol, quarter_key)
+        if _cache_enabled():
+            _init_llm_cache()
+            cached = _get_cached_llm_response(cache_key)
+            if cached:
+                app.logger.info(
+                    "LLM cache hit: key=%s symbol=%s quarter=%s",
+                    cache_key[:12],
+                    symbol,
+                    quarter_key,
+                )
+                return jsonify(cached)
+
         # Call LLM
+        app.logger.info("LLM call: initial analysis")
         llm_output = call_llm(llm_input)
         
         # Try to parse JSON from the response
@@ -246,19 +364,74 @@ def analyze():
         def _risk_needs_retry(risk_block: dict) -> bool:
             if not isinstance(risk_block, dict):
                 return True
+
+            def _is_not_provided_list(value) -> bool:
+                return (
+                    isinstance(value, list)
+                    and len(value) == 1
+                    and isinstance(value[0], str)
+                    and value[0].strip().lower() == "not provided"
+                )
+
+            def _is_low_content_risk_item(item) -> bool:
+                if not isinstance(item, str):
+                    return True
+                text = item.strip()
+                if not text:
+                    return True
+                lower = text.lower()
+                if lower in {
+                    "recurring",
+                    "escalating",
+                    "new",
+                    "worsening",
+                    "significant",
+                    "material",
+                }:
+                    return True
+                return len(text.split()) < 6
+
+            def _list_low_quality(value, min_good: int) -> bool:
+                if _is_not_provided_list(value):
+                    return False
+                if not isinstance(value, list) or not value:
+                    return True
+                good = [
+                    item
+                    for item in value
+                    if isinstance(item, str) and not _is_low_content_risk_item(item)
+                ]
+                return len(good) < min_good
+
+            if _list_low_quality(risk_block.get("identified_risks"), 3):
+                return True
+            if _list_low_quality(risk_block.get("new_risks"), 1):
+                return True
+            if _list_low_quality(risk_block.get("recurring_risks"), 1):
+                return True
+            if _list_low_quality(risk_block.get("resolved_risks"), 0):
+                return True
+
             def _is_placeholder_list(value):
                 return isinstance(value, list) and (
                     not value or all(item == "Not provided" for item in value)
                 )
+
             return (
                 _is_placeholder_list(risk_block.get("identified_risks"))
                 or _is_placeholder_list(risk_block.get("new_risks"))
                 or _is_placeholder_list(risk_block.get("recurring_risks"))
                 or _is_placeholder_list(risk_block.get("resolved_risks"))
                 or risk_block.get("risk_assessment") in (None, "", "Not provided")
+                or (
+                    isinstance(risk_block.get("risk_assessment"), str)
+                    and len(risk_block.get("risk_assessment").strip()) < 40
+                )
             )
 
-        if _risk_needs_retry(result.get("risk_analysis", {})):
+        enable_risk_retry = os.getenv("ENABLE_RISK_RETRY", "1") != "0"
+        if enable_risk_retry and _risk_needs_retry(result.get("risk_analysis", {})):
+            app.logger.info("LLM retry: risk_analysis")
             retry_instruction = (
                 "\n\nIMPORTANT: The risk_analysis section must be populated with "
                 "specific risks from the transcripts. Do not use 'Not provided' "
@@ -302,10 +475,13 @@ def analyze():
                         _section_empty("current_quarter", section_value.get("current_quarter"))
                         or _section_empty("prior_quarter", section_value.get("prior_quarter"))
                     )
+                if section_key == "risk_analysis":
+                    return _risk_needs_retry(section_value)
                 return all(_section_empty(k, v) for k, v in section_value.items())
             return False
 
         def _refill_section(section_key: str, guidance: str, system_hint: str):
+            app.logger.info("LLM refill: section=%s", section_key)
             refill_prompt = (
                 f"\n\nONLY return JSON with the single top-level key '{section_key}'. "
                 f"{guidance}"
@@ -316,7 +492,11 @@ def analyze():
                 result[section_key] = refill_result[section_key]
 
         # Refill any empty sections individually
-        if _section_empty("performance_summary", result.get("performance_summary")):
+        enable_refills = os.getenv("ENABLE_REFILLS", "1") != "0"
+        perf_empty = _section_empty("performance_summary", result.get("performance_summary"))
+        if perf_empty:
+            app.logger.info("Refill check: performance_summary empty=%s", perf_empty)
+        if enable_refills and perf_empty:
             _refill_section(
                 "performance_summary",
                 "Include current_quarter, prior_quarter, and key_changes strings. "
@@ -327,7 +507,10 @@ def analyze():
                 "Return concise but specific metrics, growth, and operational highlights. "
                 "Output only JSON for performance_summary."
             )
-        if _section_empty("management_tone", result.get("management_tone")):
+        tone_empty = _section_empty("management_tone", result.get("management_tone"))
+        if tone_empty:
+            app.logger.info("Refill check: management_tone empty=%s", tone_empty)
+        if enable_refills and tone_empty:
             _refill_section(
                 "management_tone",
                 "Include current_quarter_tone, prior_quarter_tone, and tone_shift strings."
@@ -335,7 +518,10 @@ def analyze():
                 "You are analyzing management tone across two earnings call transcripts. "
                 "Return only JSON for management_tone."
             )
-        if _section_empty("bullish_bearish_statements", result.get("bullish_bearish_statements")):
+        bbs_empty = _section_empty("bullish_bearish_statements", result.get("bullish_bearish_statements"))
+        if bbs_empty:
+            app.logger.info("Refill check: bullish_bearish_statements empty=%s", bbs_empty)
+        if enable_refills and bbs_empty:
             _refill_section(
                 "bullish_bearish_statements",
                 "Include current_quarter and prior_quarter blocks with bullish_statements, bearish_statements, net_sentiment, plus sentiment_change."
@@ -343,7 +529,10 @@ def analyze():
                 "Extract bullish/bearish statements from each transcript with speaker attribution. "
                 "Return only JSON for bullish_bearish_statements."
             )
-        if _section_empty("guidance_changes", result.get("guidance_changes")):
+        guidance_empty = _section_empty("guidance_changes", result.get("guidance_changes"))
+        if guidance_empty:
+            app.logger.info("Refill check: guidance_changes empty=%s", guidance_empty)
+        if enable_refills and guidance_empty:
             _refill_section(
                 "guidance_changes",
                 "Include revenue_guidance, margin_guidance, capex_guidance, other_guidance, guidance_summary."
@@ -351,11 +540,15 @@ def analyze():
                 "Extract explicit guidance from the transcripts. If guidance is absent, state 'Not provided'. "
                 "Return only JSON for guidance_changes."
             )
-        if _section_empty("risk_analysis", result.get("risk_analysis")):
+        risk_empty = _section_empty("risk_analysis", result.get("risk_analysis"))
+        if risk_empty:
+            app.logger.info("Refill check: risk_analysis empty=%s", risk_empty)
+        if enable_refills and risk_empty:
             _refill_section(
                 "risk_analysis",
                 "Include identified_risks, new_risks, recurring_risks, resolved_risks lists, and risk_assessment string. "
-                "Provide at least 5 identified risks if possible; use concise statements.",
+                "Provide at least 5 identified risks if possible; each list item must be a full sentence (8+ words) "
+                "describing the risk and why it matters. Avoid labels like 'recurring' or 'escalating'.",
                 "You are extracting risks from earnings call transcripts. "
                 "Treat constraints, headwinds, guidance caveats, FX impacts, margin pressure, competition, "
                 "regulatory issues, and execution risks as risks. "
@@ -425,10 +618,17 @@ def analyze():
                 if isinstance(guidance.get(key), str):
                     guidance[key] = _paragraphize(guidance[key])
             result["guidance_changes"] = guidance
+        if _cache_enabled() and isinstance(result, dict) and "error" not in result:
+            _set_cached_llm_response(cache_key, result, symbol, quarter_key)
         return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"}), 200
 
 
 @app.route("/")
@@ -451,4 +651,6 @@ def serve_static(path):
     return send_from_directory(frontend_build, "index.html")
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.getenv("PORT", "5050"))
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug, use_reloader=False, port=port)

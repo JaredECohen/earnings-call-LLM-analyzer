@@ -26,19 +26,58 @@ This web application transforms raw quarterly earnings call transcripts into act
 
 ## Usage
 ### Web UI
-Run `python app.py` and open http://127.0.0.1:5000/ in your browser.
+Run `python app.py` and open http://127.0.0.1:5050/ in your browser.
 - Enter a company symbol (e.g., AAPL, MSFT)
-- Optionally specify a quarter (e.g., 2024Q1)
+- Optionally specify a quarter in `YYYYQ#` format (e.g., 2024Q1). Input is case-insensitive.
 - Click "Analyze" to get comprehensive insights
 
 ### Production-Style Single Server
 You can serve the React UI directly from Flask (no separate dev server):
 1. Build the frontend: `cd frontend && npm run build`
 2. Start the backend: `python app.py`
-3. Open http://127.0.0.1:5000/
+3. Open http://127.0.0.1:5050/
+
+### Health Check
+Verify the backend is running:
+```
+curl http://127.0.0.1:5050/api/health
+```
+
+### React Dev Mode (Optional)
+If you prefer the React dev server:
+1. Start backend: `python app.py`
+2. Start frontend: `cd frontend && npm start`
+3. Ensure `frontend/src/setupProxy.js` points to `http://127.0.0.1:5050`
+4. Open http://localhost:3000/
+Note: The dev server can time out on long LLM calls; single-server mode is more reliable.
 
 ### Command Line
 Run `python main.py` for basic analysis (uses environment variable or defaults to MSFT)
+
+## Local Cache (SQLite)
+This project uses two local-only SQLite caches to speed up development:
+- Transcript cache: `data/transcripts.db`
+- LLM response cache: `data/llm_cache.db`
+
+These caches are **automatically disabled** in non-local environments (Render/Fly/Railway/Vercel/etc.) and are only used when running locally. You can override this behavior:
+- `ENABLE_LOCAL_CACHE=1` forces cache **on**
+- `ENABLE_LOCAL_CACHE=0` forces cache **off**
+Cache keys are based on the **symbol + quarter**. A blank quarter is treated as the most recent available quarter.
+
+## Model Selection
+You can switch Claude models via the `CLAUDE_MODEL` environment variable:
+- `claude-haiku-4-5` (default)
+- `claude-sonnet-4-6`
+- `claude-opus-4-6`
+
+Example:
+```
+CLAUDE_MODEL=claude-sonnet-4-6 python app.py
+```
+
+## Troubleshooting
+- **UI shows `Failed to fetch` but `curl` works**: likely React dev server/proxy timeout. Use single-server mode (`npm run build` + `python app.py`).
+- **Empty sections in output**: clear the LLM cache (`rm data/llm_cache.db`) or run with `ENABLE_LOCAL_CACHE=0`.
 
 ## Analysis Output
 The system provides structured analysis in five categories with quarter-over-quarter comparisons:
@@ -59,7 +98,6 @@ The system provides structured analysis in five categories with quarter-over-qua
 - Anthropic API access for LLM analysis
 
 ## Future Enhancements
-- React.js frontend for enhanced interactivity
 - Database caching for improved performance
 - Multi-company portfolio analysis
 - Advanced visualizations and trend tracking
