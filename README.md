@@ -88,8 +88,8 @@ The system provides structured analysis in five categories with quarter-over-qua
 - **Risk Analysis**: Comprehensive risk catalog with change tracking
 
 ## Architecture
-- **Frontend**: Flask-based responsive web interface
-- **Backend**: Python with Alpha Vantage API integration
+- **Frontend**: React (served by Flask in single-server mode)
+- **Backend**: Flask API with Alpha Vantage integration
 - **AI Engine**: Anthropic Claude for advanced NLP analysis
 - **Data Processing**: Automated transcript retrieval and structured output parsing
 
@@ -101,3 +101,6 @@ The system provides structured analysis in five categories with quarter-over-qua
 - Database caching for improved performance
 - Multi-company portfolio analysis
 - Advanced visualizations and trend tracking
+- Quick scorecard summary at the top of the results view
+- Company picker dropdown with suggestions/autocomplete
+- Calendar of upcoming earnings call dates
