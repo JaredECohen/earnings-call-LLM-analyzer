@@ -182,8 +182,9 @@ def analyze():
                 return jsonify(cached)
 
         # Call LLM
+        usage_records: list[dict[str, int]] = []
         app.logger.info("LLM call: initial analysis")
-        llm_output = call_llm(llm_input)
+        llm_output = call_llm(llm_input, usage_sink=usage_records)
         
         # Try to parse JSON from the response
         def parse_output(text: str) -> dict:
@@ -437,7 +438,9 @@ def analyze():
                 "specific risks from the transcripts. Do not use 'Not provided' "
                 "unless absolutely no risk language exists."
             )
-            retry_output = call_llm(llm_input + retry_instruction)
+            retry_output = call_llm(
+                llm_input, suffix=retry_instruction, usage_sink=usage_records,
+            )
             result = normalize_result(parse_output(retry_output))
 
         def _looks_like_label(value: str) -> bool:
@@ -486,7 +489,10 @@ def analyze():
                 f"\n\nONLY return JSON with the single top-level key '{section_key}'. "
                 f"{guidance}"
             )
-            refill_output = call_llm(llm_input + refill_prompt, system_override=system_hint)
+            refill_output = call_llm(
+                llm_input, instructions=system_hint, suffix=refill_prompt,
+                usage_sink=usage_records,
+            )
             refill_result = normalize_result(parse_output(refill_output))
             if section_key in refill_result and not _section_empty(section_key, refill_result.get(section_key)):
                 result[section_key] = refill_result[section_key]
@@ -618,6 +624,24 @@ def analyze():
                 if isinstance(guidance.get(key), str):
                     guidance[key] = _paragraphize(guidance[key])
             result["guidance_changes"] = guidance
+        if usage_records:
+            totals = {
+                key: sum(record.get(key, 0) for record in usage_records)
+                for key in ("input_tokens", "cache_creation_input_tokens",
+                            "cache_read_input_tokens", "output_tokens")
+            }
+            prompt_tokens = (
+                totals["input_tokens"] + totals["cache_creation_input_tokens"]
+                + totals["cache_read_input_tokens"]
+            )
+            app.logger.info(
+                "LLM usage summary: calls=%d input=%d cache_write=%d cache_read=%d "
+                "output=%d cache_read_share=%.2f",
+                len(usage_records), totals["input_tokens"],
+                totals["cache_creation_input_tokens"], totals["cache_read_input_tokens"],
+                totals["output_tokens"],
+                totals["cache_read_input_tokens"] / prompt_tokens if prompt_tokens else 0.0,
+            )
         if _cache_enabled() and isinstance(result, dict) and "error" not in result:
             _set_cached_llm_response(cache_key, result, symbol, quarter_key)
         return jsonify(result)
