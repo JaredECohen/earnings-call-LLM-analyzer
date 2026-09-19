@@ -79,6 +79,11 @@ Example:
 CLAUDE_MODEL=claude-sonnet-4-6 python app.py
 ```
 
+`CLAUDE_MAX_TOKENS` caps the output of each call (default 16384). A full five-section
+analysis of two transcripts runs well past the old 4,096 cap, which cut the JSON off on every
+initial call and left the section refills to patch it. A call that still stops at the cap logs
+`LLM output truncated at max_tokens=…` and counts under `truncated_calls` in the usage summary.
+
 ## Troubleshooting
 - **UI shows `Failed to fetch` but `curl` works**: likely React dev server/proxy timeout. Use single-server mode (`npm run build` + `python app.py`).
 - **Empty sections in output**: clear the LLM cache (`rm data/llm_cache.db`) or run with `ENABLE_LOCAL_CACHE=0`.
