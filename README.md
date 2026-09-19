@@ -62,6 +62,10 @@ This project uses two local-only SQLite caches to speed up development:
 These caches are **automatically disabled** in non-local environments (Render/Fly/Railway/Vercel/etc.) and are only used when running locally. You can override this behavior:
 - `ENABLE_LOCAL_CACHE=1` forces cache **on**
 - `ENABLE_LOCAL_CACHE=0` forces cache **off**
+- `ENABLE_PROMPT_CACHE=0` turns off Anthropic prompt caching (default on). With it on, the two
+  transcripts are sent as one cached block and each call's instructions follow, so the initial
+  analysis, the risk retry, and the section refills all read the same cached prefix instead of
+  re-paying for ~25K transcript tokens per call. The per-analysis token summary is logged.
 Cache keys are based on the **symbol + quarter**. A blank quarter is treated as the most recent available quarter.
 
 ## Model Selection
