@@ -44,7 +44,25 @@ def _get_client():
 # Prompt caches are model-scoped, so the model is pinned once per process rather
 # than re-read on every attempt.
 MODEL_NAME = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
-MAX_TOKENS = 4096
+
+# Output budget per call. A full five-section analysis of two transcripts runs
+# well past 4,096 output tokens (MSFT 2026Q1 hit that ceiling on every initial
+# and retry call, so the JSON was always cut off and the section refills existed
+# to patch it). Haiku 4.5 allows 64K; 16K covers the whole analysis with room to
+# spare, and a call that still stops at the ceiling says so in its usage record.
+DEFAULT_MAX_TOKENS = 16384
+
+
+def _max_tokens_from_env(raw: str | None) -> int:
+    """`CLAUDE_MAX_TOKENS`, or the default when unset or not a positive integer."""
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_TOKENS
+    return value if value > 0 else DEFAULT_MAX_TOKENS
+
+
+MAX_TOKENS = _max_tokens_from_env(os.getenv("CLAUDE_MAX_TOKENS"))
 
 _JSON_ONLY_INSTRUCTIONS = (
     "Return ONLY a single JSON object with no surrounding text, markdown, or code fences. "
@@ -61,6 +79,8 @@ USAGE_KEYS = (
     "cache_read_input_tokens",
     "output_tokens",
 )
+# Set to 1 on a usage record whose call stopped at `max_tokens` (truncated JSON).
+TRUNCATED_KEY = "output_truncated"
 
 
 def prompt_cache_enabled() -> bool:
@@ -135,7 +155,15 @@ def call_llm(
         try:
             response = _get_client().messages.create(**request)
             usage = usage_counts(getattr(response, "usage", None))
+            truncated = getattr(response, "stop_reason", None) == "max_tokens"
+            usage[TRUNCATED_KEY] = int(truncated)
             print("LLM usage: " + " ".join(f"{key}={value}" for key, value in usage.items()))
+            if truncated:
+                print(
+                    f"LLM output truncated at max_tokens={request['max_tokens']}: the JSON "
+                    "is cut off and later sections will read as missing. Raise "
+                    "CLAUDE_MAX_TOKENS."
+                )
             if usage_sink is not None:
                 usage_sink.append(usage)
             return response.content[0].text

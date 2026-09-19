@@ -4,6 +4,7 @@ An analysis makes up to seven calls over the same two transcripts. With prompt
 caching on, all seven must share one cached transcript block and carry exactly
 one cache marker; with it off, the legacy request must be reproduced exactly.
 """
+import io
 import json
 import os
 import sys
@@ -85,6 +86,33 @@ class BuildRequestTest(unittest.TestCase):
         self.assertEqual(request["system"], llm_api.DEFAULT_INSTRUCTIONS)
         self.assertEqual(request["messages"], [{"role": "user", "content": "T\n\nask"}])
         self.assertNotIn("cache_control", json.dumps(request))
+
+
+class MaxTokensTest(unittest.TestCase):
+    def test_default_covers_a_full_analysis_and_env_overrides_it(self):
+        self.assertEqual(llm_api._max_tokens_from_env(None), llm_api.DEFAULT_MAX_TOKENS)
+        self.assertEqual(llm_api._max_tokens_from_env(" 32000 "), 32000)
+        for bad in ("", "abc", "0", "-5", "4096.5"):
+            self.assertEqual(llm_api._max_tokens_from_env(bad), llm_api.DEFAULT_MAX_TOKENS, bad)
+        # 4,096 truncated every initial call on a real transcript pair.
+        self.assertGreaterEqual(llm_api.DEFAULT_MAX_TOKENS, 16384)
+
+    def test_a_call_that_stops_at_max_tokens_is_flagged_in_its_usage_record(self):
+        def client(stop_reason: str):
+            return mock.Mock(messages=mock.Mock(create=lambda **kwargs: mock.Mock(
+                content=[mock.Mock(text="{")],
+                stop_reason=stop_reason,
+                usage=mock.Mock(input_tokens=5, output_tokens=llm_api.MAX_TOKENS,
+                                cache_creation_input_tokens=0, cache_read_input_tokens=0),
+            )))
+
+        for stop_reason, expected in (("max_tokens", 1), ("end_turn", 0)):
+            sink: list[dict] = []
+            with mock.patch.object(llm_api, "_get_client", return_value=client(stop_reason)), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+                llm_api.call_llm("T", usage_sink=sink)
+            self.assertEqual(sink[0][llm_api.TRUNCATED_KEY], expected, stop_reason)
+            self.assertEqual("truncated at max_tokens" in out.getvalue(), expected == 1, stop_reason)
 
 
 class AnalysisRequestShapeTest(unittest.TestCase):

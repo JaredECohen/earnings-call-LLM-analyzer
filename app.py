@@ -628,7 +628,8 @@ def analyze():
             totals = {
                 key: sum(record.get(key, 0) for record in usage_records)
                 for key in ("input_tokens", "cache_creation_input_tokens",
-                            "cache_read_input_tokens", "output_tokens")
+                            "cache_read_input_tokens", "output_tokens",
+                            "output_truncated")
             }
             prompt_tokens = (
                 totals["input_tokens"] + totals["cache_creation_input_tokens"]
@@ -636,11 +637,12 @@ def analyze():
             )
             app.logger.info(
                 "LLM usage summary: calls=%d input=%d cache_write=%d cache_read=%d "
-                "output=%d cache_read_share=%.2f",
+                "output=%d cache_read_share=%.2f truncated_calls=%d",
                 len(usage_records), totals["input_tokens"],
                 totals["cache_creation_input_tokens"], totals["cache_read_input_tokens"],
                 totals["output_tokens"],
                 totals["cache_read_input_tokens"] / prompt_tokens if prompt_tokens else 0.0,
+                totals["output_truncated"],
             )
         if _cache_enabled() and isinstance(result, dict) and "error" not in result:
             _set_cached_llm_response(cache_key, result, symbol, quarter_key)
