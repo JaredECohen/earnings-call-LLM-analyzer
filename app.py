@@ -144,6 +144,33 @@ def handle_unexpected_error(err):
     app.logger.error("Unhandled exception: %s", trace)
     return jsonify({"error": str(err), "trace": trace}), 500
 
+_QUARTER_LABEL_RE = re.compile(r"\d{4}q[1-4]")
+_FISCAL_QUARTER_LABEL_RE = re.compile(r"fy\d{4}\s*q[1-4]\s*\(\d{4}q[1-4]\)")
+
+
+def _looks_like_label(value: str) -> bool:
+    """A section value that is only a placeholder or a period label, not content.
+
+    Drives the section refills: a "performance_summary" whose quarters read
+    "2026Q1" or "Not provided" has to be re-asked. (Until 2026-09-19 the two
+    period patterns were written as ``r"\\d..."`` — a literal backslash inside a
+    raw string — so they could never match; the ≤3-word rule hid that.)
+    """
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return True
+    lower = stripped.lower()
+    if lower in ("not provided", "n/a"):
+        return True
+    if _QUARTER_LABEL_RE.fullmatch(lower) or _FISCAL_QUARTER_LABEL_RE.fullmatch(lower):
+        return True
+    if len(stripped.split()) <= 3:
+        return True
+    return False
+
+
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     data = request.get_json()
@@ -442,23 +469,6 @@ def analyze():
                 llm_input, suffix=retry_instruction, usage_sink=usage_records,
             )
             result = normalize_result(parse_output(retry_output))
-
-        def _looks_like_label(value: str) -> bool:
-            if not isinstance(value, str):
-                return False
-            stripped = value.strip()
-            if not stripped:
-                return True
-            lower = stripped.lower()
-            if lower in ("not provided", "n/a"):
-                return True
-            if re.fullmatch(r"\\d{4}q[1-4]", lower):
-                return True
-            if re.fullmatch(r"fy\\d{4}\\s*q[1-4]\\s*\\(\\d{4}q[1-4]\\)", lower):
-                return True
-            if len(stripped.split()) <= 3:
-                return True
-            return False
 
         def _section_empty(section_key: str, section_value):
             if section_value is None:
